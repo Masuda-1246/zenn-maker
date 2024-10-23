@@ -13,164 +13,193 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { MessageSquare, PlusCircle, Send, FileText, MoreVertical } from "lucide-react"
+import { Send, FileText, RefreshCw, Loader2, Save } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 interface ChatMessage {
   id: string
   content: string
-  sender: "user" | "bot"
+  role: "user" | "assistant"
   timestamp: Date
 }
 
 interface ChatSession {
-  id: string
-  title: string
-  lastUpdated: Date
   messages: ChatMessage[]
 }
 
+interface BlogPost {
+  title: string
+  content: string
+}
+
+const STORAGE_KEY = "techChatbotSession"
+
 export function TechChatbotComponent() {
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([])
-  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
+  const [chatSession, setChatSession] = useState<ChatSession>({ messages: [] })
   const [inputMessage, setInputMessage] = useState("")
-  const [newChatTitle, setNewChatTitle] = useState("")
-  const [isNewChatDialogOpen, setIsNewChatDialogOpen] = useState(false)
+  const [blogTitle, setBlogTitle] = useState("")
+  const [blogContent, setBlogContent] = useState("")
+  const [isBlogDialogOpen, setIsBlogDialogOpen] = useState(false)
+  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState(false)
+  const [isGeneratingBlog, setIsGeneratingBlog] = useState(false)
+  const [generatedBlog, setGeneratedBlog] = useState<BlogPost | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const storedSession = localStorage.getItem(STORAGE_KEY)
+    if (storedSession) {
+      setChatSession(JSON.parse(storedSession))
+    }
+  }, [])
 
   useEffect(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight
     }
-  }, [currentSession?.messages])
-
-  const createNewChat = () => {
-    if (!newChatTitle.trim()) return
-
-    const newSession: ChatSession = {
-      id: Date.now().toString(),
-      title: newChatTitle,
-      lastUpdated: new Date(),
-      messages: [],
+    if (chatSession.messages.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(chatSession))
     }
-    setChatSessions([newSession, ...chatSessions])
-    setCurrentSession(newSession)
-    setNewChatTitle("")
-    setIsNewChatDialogOpen(false)
-  }
+  }, [chatSession])
 
-  const sendMessage = () => {
-    if (!inputMessage.trim() || !currentSession) return
+  const sendMessage = async () => {
+    if (!inputMessage.trim()) return
 
     const newUserMessage: ChatMessage = {
       id: Date.now().toString(),
       content: inputMessage,
-      sender: "user",
+      role: "user",
       timestamp: new Date(),
+    }
+
+    const messages = chatSession.messages
+    const updatedMessages = [...messages, newUserMessage]
+
+    setInputMessage("")
+    setChatSession(prevSession => ({
+      ...prevSession,
+      messages: [...prevSession.messages, newUserMessage],
+    }))
+
+    setIsGeneratingAnswer(true)
+
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: updatedMessages }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert('An error occurred. Please try again later.');
+      console.error(data.error);
     }
 
     const newBotMessage: ChatMessage = {
       id: (Date.now() + 1).toString(),
-      content: `You said:\n\n${inputMessage}\n\nHere's the message in markdown:\n\n\`\`\`markdown\n${inputMessage}\n\`\`\`\n\nAnd here's a table:\n\n| Column 1 | Column 2 |\n|----------|----------|\n| Row 1    | Data 1   |\n| Row 2    | Data 2   |`,
-      sender: "bot",
+      content:data.reply,
+      role: "assistant",
       timestamp: new Date(),
     }
 
-    const updatedSession = {
-      ...currentSession,
-      messages: [...currentSession.messages, newUserMessage, newBotMessage],
-      lastUpdated: new Date(),
-    }
+    setChatSession(prevSession => ({
+      ...prevSession,
+      messages: [...prevSession.messages, newBotMessage],
+    }))
 
-    setCurrentSession(updatedSession)
-    setChatSessions(
-      chatSessions.map((session) =>
-        session.id === currentSession.id ? updatedSession : session
-      )
-    )
-    setInputMessage("")
+    setIsGeneratingAnswer(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && e.ctrlKey) {
       e.preventDefault()
       sendMessage()
     }
   }
 
-  const generateBlogPost = () => {
-    console.log("Generating blog post...")
+  const generateBlogPost = async () => {
+    if (!blogTitle.trim()) return
+    setIsGeneratingBlog(true)
+    setIsBlogDialogOpen(false)
+
+    const response = await fetch('/api/generateBlog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatSession.messages }),
+    });
+
+    if (!response.ok) {
+      alert('An error occurred. Please try again later.');
+    }
+
+    const data = await response.json();
+
+    const generatedContent = data.content
+
+    // --- ---で囲まれた部分を削除
+    const content = generatedContent.replace(/---[\s\S]*?---/g, '')
+
+    setGeneratedBlog({ title: blogTitle, content: content })
+    setBlogContent(generatedContent)
+    setIsGeneratingBlog(false)
+  }
+
+  const saveBlogPost = async () => {
+    if (generatedBlog) {
+      // ブログ記事を保存
+      const saveResponse = await fetch('/api/saveBlog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blogTitle, blogContent }),
+      });
+
+      const saveData = await saveResponse.json();
+
+      if (!saveResponse.ok) {
+        console.error(saveData.error);
+      } else {
+        console.log('ブログ記事が保存されました');
+      }
+      console.log("Saving blog post:", generatedBlog)
+      alert("Blog post saved successfully!")
+    }
+  }
+
+  const resetBlogPost = () => {
+    setGeneratedBlog(null)
+    setBlogTitle("")
+    setBlogContent("")
+  }
+
+  const resetChat = () => {
+    setChatSession({ messages: [] })
+    localStorage.removeItem(STORAGE_KEY)
+    setGeneratedBlog(null)
+    setBlogTitle("")
+    setBlogContent("")
   }
 
   return (
     <div className="flex h-screen flex-col">
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 bg-gray-100 p-4">
-          <Dialog open={isNewChatDialogOpen} onOpenChange={setIsNewChatDialogOpen}>
-            <DialogTrigger asChild>
-              <Button
-                onClick={() => setIsNewChatDialogOpen(true)}
-                className="mb-4 w-full"
-                variant="outline"
-              >
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Start New Chat
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Chat</DialogTitle>
-              </DialogHeader>
-              <Input
-                value={newChatTitle}
-                onChange={(e) => setNewChatTitle(e.target.value)}
-                placeholder="Enter chat title"
-                className="mb-4"
-              />
-              <Button onClick={createNewChat}>Add</Button>
-            </DialogContent>
-          </Dialog>
-          <ScrollArea className="h-[calc(100vh-2rem)]">
-            {chatSessions.map((session) => (
-              <div
-                key={session.id}
-                className="mb-2 flex items-center justify-between rounded-lg p-2 hover:bg-gray-200"
-                onClick={() => setCurrentSession(session)}
-              >
-                <div className="flex items-center">
-                  <MessageSquare className="mr-2 h-4 w-4" />
-                  <div>
-                    <p className="font-medium">{session.title}</p>
-                    <p className="text-xs text-gray-500">
-                      {session.lastUpdated.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                <Button variant="ghost" size="icon">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </ScrollArea>
-        </aside>
         <main className="flex flex-1 flex-col">
           <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-            {currentSession?.messages.map((message) => (
+            {chatSession.messages.map((message) => (
               <div
                 key={message.id}
                 className={`mb-4 flex ${
-                  message.sender === "user" ? "justify-end" : "justify-start"
+                  message.role === "user" ? "justify-end" : "justify-start"
                 }`}
               >
                 <div
                   className={`rounded-lg p-3 max-w-[70%] break-words ${
-                    message.sender === "user"
+                    message.role === "user"
                       ? "bg-blue-100"
                       : "bg-gray-100"
                   }`}
                 >
-                  {message.sender === "user" ? (
+                  {message.role === "user" ? (
                     <p className="whitespace-pre-wrap break-words">{message.content}</p>
                   ) : (
                     <ReactMarkdown
@@ -181,11 +210,41 @@ export function TechChatbotComponent() {
                     </ReactMarkdown>
                   )}
                   <p className="mt-1 text-xs text-gray-500">
-                    {message.timestamp.toLocaleTimeString()}
+                    {new Date(message.timestamp).toLocaleTimeString()}
                   </p>
                 </div>
               </div>
             ))}
+            {isGeneratingAnswer && (
+              <div className="flex justify-center items-center my-4">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                <span className="ml-2 text-blue-500">Generating answer...</span>
+              </div>
+            )}
+            {isGeneratingBlog && (
+              <div className="flex justify-center items-center my-4">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                <span className="ml-2 text-blue-500">Generating blog post...</span>
+              </div>
+            )}
+            {generatedBlog && (
+              <div className="bg-white rounded-lg p-6 shadow-lg mb-4">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  className="prose prose-sm max-w-none dark:prose-invert"
+                >
+                  {generatedBlog.content}
+                </ReactMarkdown>
+                <Button onClick={saveBlogPost} className="mt-4">
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Blog Post
+                </Button>
+                <Button onClick={resetBlogPost} variant="destructive">
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Reset Blog Post
+                </Button>
+              </div>
+            )}
           </ScrollArea>
           <Separator />
           <div className="flex items-start gap-2 p-4">
@@ -201,9 +260,29 @@ export function TechChatbotComponent() {
               <Send className="mr-2 h-4 w-4" />
               Send
             </Button>
-            <Button onClick={generateBlogPost} variant="outline">
-              <FileText className="mr-2 h-4 w-4" />
-              Generate Blog Post
+            <Dialog open={isBlogDialogOpen} onOpenChange={setIsBlogDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <FileText className="mr-2 h-4 w-4" />
+                  Generate Blog Post
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Generate Blog Post</DialogTitle>
+                </DialogHeader>
+                <Input
+                  value={blogTitle}
+                  onChange={(e) => setBlogTitle(e.target.value)}
+                  placeholder="Enter blog post title"
+                  className="mb-4"
+                />
+                <Button onClick={generateBlogPost}>Generate</Button>
+              </DialogContent>
+            </Dialog>
+            <Button onClick={resetChat} variant="destructive">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Reset Chat
             </Button>
           </div>
         </main>
