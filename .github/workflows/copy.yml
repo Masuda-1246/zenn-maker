@@ -1,12 +1,11 @@
-name: copy Blog Markdown file
+name: Copy and Cleanup Blog Markdown Files
 
 on:
   push:
     branches:
       - main
     paths:
-      # data/blogsディレクトリ以下のファイルが更新された場合のみ実行
-      - 'data/blogs/**'
+      - 'data/articles/**'
   workflow_dispatch:
 
 jobs:
@@ -16,20 +15,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 差分を取得して変更されたファイルを抽出
-      - name: Get changed files
-        id: changed_files
+      - name: Check if articles directory is empty
+        id: check_articles
         run: |
-          git fetch origin
-          git diff --name-only --diff-filter=AMR origin/main -- 'data/blogs/**' > changed_files.txt
-          if [ ! -s changed_files.txt ]; then
-            echo "No files changed, skipping..."
+          if [ -z "$(ls -A data/articles)" ]; then
+            echo "No files in data/articles. Skipping the workflow."
             exit 0
           fi
-
-      # 変更されたファイルを表示
-      - name: Show changed files
-        run: cat changed_files.txt
 
       - name: Generate token
         id: generate_token
@@ -45,7 +37,7 @@ jobs:
         id: setup_description
         run: |
           DESCRIPTION=$(cat <<EOF
-          Add New Blog Markdown File
+          Add and Clean Up Blog Markdown Files
 
           created from ${{ env.RUN_URL }}
           latest commit: ${{ env.HEAD_COMMIT_URL }}
@@ -55,25 +47,44 @@ jobs:
 
       - name: Copy New Blog Markdown File
         uses: dmnemec/copy_file_to_another_repo_action@v1.1.1
+        if: steps.check_articles.outputs.success != 'false'
         env:
           API_TOKEN_GITHUB: ${{ steps.generate_token.outputs.token }}
         with:
-          source_file: "$(cat changed_files.txt)"
-          destination_repo: "Masuda-1246/zenn"
-          destination_folder: "articles"
-          destination_branch: "main"
+          source_file: "data/articles/**"
+          destination_repo: ${{ vars.DESTINATION_REPO }}
+          destination_folder: "/"
+          destination_branch: ${{ vars.DESTINATION_REPO_HEAD_BRANCH }}
           user_email: "github-actions[bot]@users.noreply.github.com"
           user_name: "github-actions[bot]"
           commit_message: ${{ steps.setup_description.outputs.content }}
 
+      - name: Delete Blog Markdown Files
+        if: steps.check_articles.outputs.success != 'false'
+        run: |
+          rm -rf data/articles/*
+        shell: bash
+
+      - name: Commit Deleted Blog Files
+        if: steps.check_articles.outputs.success != 'false'
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add data/articles/
+          git commit -m "Delete all blog markdown files after copying"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Pull Request to another-repo
+        if: steps.check_articles.outputs.success != 'false'
         run: |
           gh pr create \
-            --title "update Golang file" \
+            --title "Add and Clean Up Blog Markdown files" \
             --body "${{ steps.setup_description.outputs.content }}" \
-            --repo Masuda-1246/zenn \
-            --base main \
-            --head openapi-spec \
+            --repo "${{ vars.DESTINATION_REPO }}" \
+            --base "${{ vars.DESTINATION_REPO_BASE_BRANCH }}" \
+            --head "${{ vars.DESTINATION_REPO_HEAD_BRANCH }}" \
             --reviewer "${{ github.event.head_commit.committer.username || github.triggering_actor }}"
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
