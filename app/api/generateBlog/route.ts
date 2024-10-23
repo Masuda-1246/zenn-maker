@@ -87,7 +87,7 @@ title: "${blogData.title}"
 emoji: "${blogData.emoji}"
 type: "tech"
 topics: ${JSON.stringify(blogData.topics)}
-published: false
+published: true
 ---
 
 ## TL;DR
