@@ -37,7 +37,8 @@ export async function POST(request: Request) {
     const systemPrompt: OpenAI.Chat.ChatCompletionMessageParam = {
       role: 'system',
       content: `あなたは技術ブログの記事を生成する専門家です。
-与えられた会話内容から、技術的な問題と解決策を分析し、わかりやすい技術ブログ記事を作成してください。
+与えられた会話内容から、技術的な問題と解決策を分析したり、わかりやすい技術ブログ記事を作成してください。
+会話の中で出てくるシークレットな情報や個人情報は含めないでください。
 記事は JSON 形式で返してください。`,
     };
 
@@ -65,7 +66,7 @@ ${conversationContext}
 
     // ChatGPT APIを呼び出し
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo-0125',
+      model: process.env.OPENAI_MODEL!,
       messages: [systemPrompt, userPrompt],
       temperature: 0.7,
       max_tokens: 2000,

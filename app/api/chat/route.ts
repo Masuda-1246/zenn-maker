@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
     // ChatGPT API の呼び出し
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: process.env.OPENAI_MODEL!, // 環境変数のモデル ID を指定
       messages: messagesWitmessageshSystem,
     });
 
