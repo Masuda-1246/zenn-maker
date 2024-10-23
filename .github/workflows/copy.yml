@@ -51,7 +51,7 @@ jobs:
         env:
           API_TOKEN_GITHUB: ${{ steps.generate_token.outputs.token }}
         with:
-          source_file: "data/articles/**"
+          source_file: "data/articles/"
           destination_repo: ${{ vars.DESTINATION_REPO }}
           destination_folder: "/"
           destination_branch: ${{ vars.DESTINATION_REPO_HEAD_BRANCH }}
