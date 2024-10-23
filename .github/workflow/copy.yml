@@ -1,0 +1,79 @@
+name: copy Blog Markdown file
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # data/blogsディレクトリ以下のファイルが更新された場合のみ実行
+      - 'data/blogs/**'
+  workflow_dispatch:
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 差分を取得して変更されたファイルを抽出
+      - name: Get changed files
+        id: changed_files
+        run: |
+          git fetch origin
+          git diff --name-only --diff-filter=AMR origin/main -- 'data/blogs/**' > changed_files.txt
+          if [ ! -s changed_files.txt ]; then
+            echo "No files changed, skipping..."
+            exit 0
+          fi
+
+      # 変更されたファイルを表示
+      - name: Show changed files
+        run: cat changed_files.txt
+
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.PRIVATE_KEY }}
+
+      - name: Setup commit description
+        env:
+          RUN_URL: "${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}"
+          HEAD_COMMIT_URL: "${{ github.event.repository.html_url }}/commit/${{ github.event.after || github.sha }}"
+        id: setup_description
+        run: |
+          DESCRIPTION=$(cat <<EOF
+          Add New Blog Markdown File
+
+          created from ${{ env.RUN_URL }}
+          latest commit: ${{ env.HEAD_COMMIT_URL }}
+          EOF)
+          DESCRIPTION="${DESCRIPTION//$'\n'/'%0A'}"
+          echo "::set-output name=content::$DESCRIPTION"
+
+      - name: Copy New Blog Markdown File
+        uses: dmnemec/copy_file_to_another_repo_action@v1.1.1
+        env:
+          API_TOKEN_GITHUB: ${{ steps.generate_token.outputs.token }}
+        with:
+          source_file: "$(cat changed_files.txt)"
+          destination_repo: "Masuda-1246/zenn"
+          destination_folder: "articles"
+          destination_branch: "main"
+          user_email: "github-actions[bot]@users.noreply.github.com"
+          user_name: "github-actions[bot]"
+          commit_message: ${{ steps.setup_description.outputs.content }}
+
+      - name: Create Pull Request to another-repo
+        run: |
+          gh pr create \
+            --title "update Golang file" \
+            --body "${{ steps.setup_description.outputs.content }}" \
+            --repo Masuda-1246/zenn \
+            --base main \
+            --head openapi-spec \
+            --reviewer "${{ github.event.head_commit.committer.username || github.triggering_actor }}"
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
