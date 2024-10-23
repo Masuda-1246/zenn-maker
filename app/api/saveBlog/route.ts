@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const { blogTitle, blogContent }: { blogTitle: string; blogContent: string } = await request.json();
 
     // 保存先ディレクトリ
-    const dir = path.join(process.cwd(), 'data', 'blogs');
+    const dir = path.join(process.cwd(), 'data', 'articles');
 
     // ディレクトリを作成（存在しない場合のみ）
     await fs.mkdir(dir, { recursive: true });
