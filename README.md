@@ -1,8 +1,9 @@
 # zenn-maker
 ## TL;DR
-この記事・動画をご覧ください
+この
 [Zenn](https://zenn.dev/masuda1112/articles/2024-10-25-zenn-maker)
 [YouTube](https://youtu.be/USWBTOucO80)
+ご覧ください
 
 ## 用意するもの
 - Zennのアカウント
